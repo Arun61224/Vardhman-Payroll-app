@@ -105,6 +105,11 @@ export const AttendanceTracker: React.FC = () => {
           else if (lowerStatus.includes('leave')) status = 'Leave';
         }
 
+        // If both punchIn and punchOut are missing/empty, force status to 'Absent'
+        if (status === 'Present' && !punchIn && !punchOut) {
+          status = 'Absent';
+        }
+
         const empExists = employees.some(emp => emp.id.toLowerCase() === empId.toLowerCase());
 
         rows.push({
@@ -114,8 +119,8 @@ export const AttendanceTracker: React.FC = () => {
           employeeName: matchedEmp ? matchedEmp.name : 'Unknown ID',
           exists: empExists,
           status,
-          punchIn,
-          punchOut,
+          punchIn: status === 'Present' ? punchIn : undefined,
+          punchOut: status === 'Present' ? punchOut : undefined,
         });
       }
 
@@ -246,17 +251,24 @@ export const AttendanceTracker: React.FC = () => {
       const match = attendanceRecords.find((r) => r.employeeId === emp.id && r.date === activeDate);
       
       if (match) {
+        const hasIn = !!(match.punchIn && match.punchIn !== '-' && match.punchIn.trim() !== '');
+        const hasOut = !!(match.punchOut && match.punchOut !== '-' && match.punchOut.trim() !== '');
+        let finalStatus = match.status;
+        if (finalStatus === 'Present' && !hasIn && !hasOut) {
+          finalStatus = 'Absent';
+        }
+
         recordsForDate[emp.id] = {
-          status: match.status,
-          punchIn: (match.punchIn && match.punchIn !== '-') ? normalizeTime(match.punchIn) : undefined,
-          punchOut: (match.punchOut && match.punchOut !== '-') ? normalizeTime(match.punchOut) : undefined,
+          status: finalStatus,
+          punchIn: finalStatus === 'Present' && hasIn ? normalizeTime(match.punchIn) : undefined,
+          punchOut: finalStatus === 'Present' && hasOut ? normalizeTime(match.punchOut) : undefined,
         };
       } else {
         // Default record
         recordsForDate[emp.id] = {
           status: sunday ? 'Absent' : 'Present', // Sunday off by default, weekdays present
-          punchIn: normalizeTime(emp.standardShiftStart),
-          punchOut: '17:00', // Default 9 hours later
+          punchIn: sunday ? undefined : normalizeTime(emp.standardShiftStart),
+          punchOut: sunday ? undefined : '17:00', // Default 9 hours later
         };
       }
     });
@@ -265,23 +277,57 @@ export const AttendanceTracker: React.FC = () => {
   }, [activeDate, employees, attendanceRecords, sunday]);
 
   const handleStatusChange = (empId: string, status: AttendanceStatus) => {
-    setLocalRecords((prev) => ({
-      ...prev,
-      [empId]: {
-        ...prev[empId],
-        status,
-      },
-    }));
+    const emp = employees.find(e => e.id === empId);
+    setLocalRecords((prev) => {
+      const current = prev[empId] || { status: 'Present', punchIn: undefined, punchOut: undefined };
+      let newPunchIn = current.punchIn;
+      let newPunchOut = current.punchOut;
+
+      if (status === 'Present') {
+        const hasPunchIn = !!(current.punchIn && current.punchIn.trim() !== '' && current.punchIn !== '-');
+        const hasPunchOut = !!(current.punchOut && current.punchOut.trim() !== '' && current.punchOut !== '-');
+        if (!hasPunchIn) newPunchIn = emp?.standardShiftStart || '08:00';
+        if (!hasPunchOut) newPunchOut = '17:00';
+      } else {
+        newPunchIn = undefined;
+        newPunchOut = undefined;
+      }
+
+      return {
+        ...prev,
+        [empId]: {
+          status,
+          punchIn: newPunchIn,
+          punchOut: newPunchOut,
+        },
+      };
+    });
   };
 
   const handlePunchChange = (empId: string, field: 'punchIn' | 'punchOut', value: string) => {
-    setLocalRecords((prev) => ({
-      ...prev,
-      [empId]: {
-        ...prev[empId],
+    setLocalRecords((prev) => {
+      const current = prev[empId] || { status: 'Present', punchIn: undefined, punchOut: undefined };
+      const updatedPunch = {
+        ...current,
         [field]: value,
-      },
-    }));
+      };
+
+      const hasIn = !!(updatedPunch.punchIn && updatedPunch.punchIn.trim() !== '' && updatedPunch.punchIn !== '-');
+      const hasOut = !!(updatedPunch.punchOut && updatedPunch.punchOut.trim() !== '' && updatedPunch.punchOut !== '-');
+
+      let newStatus = updatedPunch.status;
+      if (newStatus === 'Present' && !hasIn && !hasOut) {
+        newStatus = 'Absent';
+      }
+
+      return {
+        ...prev,
+        [empId]: {
+          ...updatedPunch,
+          status: newStatus,
+        },
+      };
+    });
   };
 
   const handleBulkPreset = (presetStatus: AttendanceStatus) => {
@@ -467,10 +513,11 @@ export const AttendanceTracker: React.FC = () => {
           <div className="divide-y divide-slate-100">
             {employees.map((emp) => {
               const localState = localRecords[emp.id] || { status: 'Present', punchIn: emp.standardShiftStart, punchOut: '17:00' };
-              const isPresent = localState.status === 'Present';
-              
               const hasPunchIn = !!(localState.punchIn && localState.punchIn.trim() !== '' && localState.punchIn !== '-');
               const hasPunchOut = !!(localState.punchOut && localState.punchOut.trim() !== '' && localState.punchOut !== '-');
+
+              const effectiveStatus = (localState.status === 'Present' && !hasPunchIn && !hasPunchOut) ? 'Absent' : localState.status;
+              const isPresent = effectiveStatus === 'Present';
 
               // Project metrics in real-time
               const hoursWorked = isPresent && hasPunchIn && hasPunchOut
@@ -515,7 +562,7 @@ export const AttendanceTracker: React.FC = () => {
                         key={st}
                         onClick={() => handleStatusChange(emp.id, st)}
                         className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                          localState.status === st
+                          effectiveStatus === st
                             ? st === 'Present'
                               ? 'bg-emerald-600 text-white'
                               : st === 'Absent'
@@ -577,12 +624,12 @@ export const AttendanceTracker: React.FC = () => {
                             ) : hasPunchIn && !hasPunchOut ? (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
                                 <AlertTriangle className="h-3 w-3 shrink-0" />
-                                No Punch Out
+                                No punchout
                               </span>
                             ) : !hasPunchIn && hasPunchOut ? (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
                                 <AlertTriangle className="h-3 w-3 shrink-0" />
-                                No Punch In
+                                No punchin
                               </span>
                             ) : isLate ? (
                               lateExceeded ? (
