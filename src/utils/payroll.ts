@@ -319,3 +319,48 @@ export function calculateMonthlySummary(
     dailyDetails,
   };
 }
+
+// Normalize and format time string safely to "HH:MM" (e.g., "9:30" -> "09:30", "08:15 AM" -> "08:15", "07:26 PM" -> "19:26")
+export function normalizeTime(timeStr: string | undefined | null, defaultFallback = '08:00'): string {
+  if (!timeStr) return defaultFallback;
+  
+  const trimmed = timeStr.trim();
+  if (trimmed === '') return defaultFallback;
+
+  // Check if it has AM/PM
+  const ampmMatch = trimmed.match(/^(\d{1,2}):(\d{2})(?:\s*)?(AM|PM|am|pm)?$/);
+  if (ampmMatch) {
+    let hours = parseInt(ampmMatch[1], 10);
+    const minutes = parseInt(ampmMatch[2], 10);
+    const ampm = ampmMatch[3];
+    
+    if (ampm) {
+      const isPm = ampm.toUpperCase() === 'PM';
+      if (isPm && hours < 12) {
+        hours += 12;
+      } else if (!isPm && hours === 12) {
+        hours = 0;
+      }
+    }
+    
+    if (!isNaN(hours) && !isNaN(minutes)) {
+      const hStr = String(hours).padStart(2, '0');
+      const mStr = String(minutes).padStart(2, '0');
+      return `${hStr}:${mStr}`;
+    }
+  }
+
+  // Fallback to simpler split in case of weird characters
+  const parts = trimmed.split(':');
+  if (parts.length >= 2) {
+    const hours = parseInt(parts[0], 10);
+    const minutes = parseInt(parts[1], 10);
+    if (!isNaN(hours) && !isNaN(minutes)) {
+      const hStr = String(hours).padStart(2, '0');
+      const mStr = String(minutes).padStart(2, '0');
+      return `${hStr}:${mStr}`;
+    }
+  }
+  
+  return defaultFallback;
+}
