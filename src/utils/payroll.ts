@@ -101,7 +101,7 @@ export function calculateDailyPayroll(
   }
 
   // Employee is Present
-  if (punchIn && punchOut) {
+  if (punchIn && punchIn !== '-' && punchOut && punchOut !== '-') {
     hoursWorked = calculateHoursWorked(punchIn, punchOut);
     
     // 1. Overtime Calculation:
@@ -163,6 +163,8 @@ export function calculateDailyPayroll(
         explanation += ` Overtime Bonus (+₹100).`;
       }
     }
+  } else {
+    explanation = 'Missing Punch In/Out (Unpaid)';
   }
 
   return {
@@ -219,13 +221,21 @@ export function calculateMonthlySummary(
       dailyDetails.push(details);
 
       if (record.status === 'Present') {
-        daysPresent++;
-        totalHoursWorked += details.hoursWorked;
-        totalLateMinutes += details.lateMinutes;
-        totalLateDeductions += details.lateDeduction;
-        totalOvertimeBonuses += details.overtimeBonus;
-        if (sunday) {
-          totalSundayPay += details.dailyWage; // Sunday wage is extra
+        const hasPunches = record.punchIn && record.punchIn !== '-' && record.punchOut && record.punchOut !== '-';
+        if (hasPunches) {
+          daysPresent++;
+          totalHoursWorked += details.hoursWorked;
+          totalLateMinutes += details.lateMinutes;
+          totalLateDeductions += details.lateDeduction;
+          totalOvertimeBonuses += details.overtimeBonus;
+          if (sunday) {
+            totalSundayPay += details.dailyWage; // Sunday wage is extra
+          }
+        } else {
+          // Present status but missing punchIn or punchOut -> Treat as unpaid/absent!
+          if (!sunday) {
+            daysAbsent++;
+          }
         }
       } else if (record.status === 'Absent') {
         if (!sunday) {
@@ -270,9 +280,10 @@ export function calculateMonthlySummary(
   }
 
   // Monthly Leave Calculation:
-  // Allowed: 1.5 days of paid leave.
-  // Any leave beyond 1.5 days is deducted at the rate of 1 Day Pay.
-  const unpaidLeaves = Math.max(0, daysLeave - 1.5);
+  // Allowed: Staff = 1.5 days of paid leave. Labour = 0 days.
+  // Any leave beyond the allowance is deducted at the rate of 1 Day Pay.
+  const allowedLeaves = employee.type === 'Staff' ? 1.5 : 0;
+  const unpaidLeaves = Math.max(0, daysLeave - allowedLeaves);
   const leaveDeductions = unpaidLeaves * oneDayPay;
 
   // Unpaid Absent Days deduction:
