@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { usePayroll } from '../context/PayrollContext';
 import { AttendanceRecord, AttendanceStatus, Employee } from '../types';
 import { Calendar, Save, Check, Clock, AlertTriangle, Moon, HelpCircle, CheckCircle2, UserCheck, RefreshCw, Upload, X, FileSpreadsheet, Download } from 'lucide-react';
-import { isSunday, calculateHoursWorked, timeToMinutes, formatReadableDate } from '../utils/payroll';
+import { isSunday, calculateHoursWorked, timeToMinutes, formatReadableDate, normalizeTime } from '../utils/payroll';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const AttendanceTracker: React.FC = () => {
@@ -63,6 +63,11 @@ export const AttendanceTracker: React.FC = () => {
         let punchIn = '08:00';
         let punchOut = '17:00';
 
+        // Find employee shift start as a fallback
+        const checkEmpId = hasDateColumn ? parts[1] : parts[0];
+        const matchedEmp = employees.find(emp => emp.id.toLowerCase() === checkEmpId.toLowerCase());
+        const empShift = matchedEmp ? normalizeTime(matchedEmp.standardShiftStart) : '08:00';
+
         if (hasDateColumn) {
           // Format: Date, EmployeeID, Status, PunchIn, PunchOut
           if (parts.length < 3) {
@@ -71,8 +76,8 @@ export const AttendanceTracker: React.FC = () => {
           dateVal = parts[0];
           empId = parts[1];
           statusStr = parts[2] || 'Present';
-          punchIn = parts[3] || '08:00';
-          punchOut = parts[4] || '17:00';
+          punchIn = normalizeTime(parts[3], empShift);
+          punchOut = normalizeTime(parts[4], '17:00');
 
           // Validate date format (YYYY-MM-DD)
           const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -83,8 +88,8 @@ export const AttendanceTracker: React.FC = () => {
           // Format: EmployeeID, Status, PunchIn, PunchOut
           empId = parts[0];
           statusStr = parts[1] || 'Present';
-          punchIn = parts[2] || '08:00';
-          punchOut = parts[3] || '17:00';
+          punchIn = normalizeTime(parts[2], empShift);
+          punchOut = normalizeTime(parts[3], '17:00');
         }
         
         let status: AttendanceStatus = 'Present';
@@ -93,7 +98,6 @@ export const AttendanceTracker: React.FC = () => {
         else if (lowerStatus.includes('leave')) status = 'Leave';
 
         const empExists = employees.some(emp => emp.id.toLowerCase() === empId.toLowerCase());
-        const matchedEmp = employees.find(emp => emp.id.toLowerCase() === empId.toLowerCase());
 
         rows.push({
           rowNum: i + 1,
@@ -137,10 +141,11 @@ export const AttendanceTracker: React.FC = () => {
         setLocalRecords(prev => {
           const updated = { ...prev };
           activeDateImports.forEach(row => {
+            const shiftStart = employees.find(e => e.id === row.employeeId)?.standardShiftStart || '08:00';
             updated[row.employeeId] = {
               status: row.status,
-              punchIn: row.punchIn || employees.find(e => e.id === row.employeeId)?.standardShiftStart || '08:00',
-              punchOut: row.punchOut || '17:00',
+              punchIn: row.punchIn ? normalizeTime(row.punchIn) : normalizeTime(shiftStart),
+              punchOut: row.punchOut ? normalizeTime(row.punchOut) : '17:00',
             };
           });
           return updated;
@@ -155,10 +160,11 @@ export const AttendanceTracker: React.FC = () => {
         const updated = { ...prev };
         importPreview.forEach(row => {
           if (row.exists) {
+            const shiftStart = employees.find(e => e.id === row.employeeId)?.standardShiftStart || '08:00';
             updated[row.employeeId] = {
               status: row.status,
-              punchIn: row.status === 'Present' ? (row.punchIn || '08:00') : undefined,
-              punchOut: row.status === 'Present' ? (row.punchOut || '17:00') : undefined,
+              punchIn: row.status === 'Present' ? normalizeTime(row.punchIn || shiftStart) : undefined,
+              punchOut: row.status === 'Present' ? normalizeTime(row.punchOut || '17:00') : undefined,
             };
           }
         });
@@ -236,14 +242,14 @@ export const AttendanceTracker: React.FC = () => {
       if (match) {
         recordsForDate[emp.id] = {
           status: match.status,
-          punchIn: match.punchIn || emp.standardShiftStart,
-          punchOut: match.punchOut || '17:00', // Default 9 hours later if shift is 8am
+          punchIn: normalizeTime(match.punchIn || emp.standardShiftStart),
+          punchOut: normalizeTime(match.punchOut || '17:00'), // Default 9 hours later if shift is 8am
         };
       } else {
         // Default record
         recordsForDate[emp.id] = {
           status: sunday ? 'Absent' : 'Present', // Sunday off by default, weekdays present
-          punchIn: emp.standardShiftStart,
+          punchIn: normalizeTime(emp.standardShiftStart),
           punchOut: '17:00', // Default 9 hours later
         };
       }
