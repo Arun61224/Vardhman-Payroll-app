@@ -3,6 +3,7 @@ import { usePayroll } from '../context/PayrollContext';
 import { Employee, EmployeeType } from '../types';
 import { Plus, Edit2, Trash2, Users, Briefcase, IndianRupee, Clock, X, UserPlus, Check, Sparkles, Save, FileSpreadsheet, Upload, RotateCcw, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { normalizeTime } from '../utils/payroll';
 
 export const EmployeeDashboard: React.FC = () => {
   const { employees, addEmployee, updateEmployee, bulkUpdateEmployees, deleteEmployee, resetToDemoData } = usePayroll();
@@ -132,7 +133,7 @@ export const EmployeeDashboard: React.FC = () => {
           throw new Error(`Row ${idx + 2} has invalid basic salary: "${salaryStr}". Must be a positive number.`);
         }
 
-        const standardShiftStart = shiftStr;
+        const standardShiftStart = normalizeTime(shiftStr);
         const esiDeducted = esiStr ? ['yes', 'true', '1', 'y', 'active'].includes(esiStr.toLowerCase()) : true;
         const pfDeducted = pfStr ? ['yes', 'true', '1', 'y', 'active'].includes(pfStr.toLowerCase()) : true;
         const lwfDeducted = lwfStr ? ['yes', 'true', '1', 'y', 'active'].includes(lwfStr.toLowerCase()) : true;
