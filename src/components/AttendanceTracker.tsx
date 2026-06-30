@@ -15,6 +15,7 @@ export const AttendanceTracker: React.FC = () => {
 
   // CSV Import States for Attendance
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [uploadMode, setUploadMode] = useState<'single' | 'multi'>('multi');
   const [importError, setImportError] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<any[]>([]);
 
@@ -39,34 +40,72 @@ export const AttendanceTracker: React.FC = () => {
         return;
       }
 
-      const rows: any[] = [];
-      lines.slice(1).forEach((line, idx) => {
-        const parts = line.split(',').map(p => p.trim());
-        if (parts.length < 2) return; // Skip empty/invalid lines
+      const headersLine = lines[0].toLowerCase();
+      const partsFirst = lines[0].split(',').map(p => p.trim().toLowerCase());
+      const hasDateColumn = partsFirst.includes('date');
 
-        const empId = parts[0];
-        const statusStr = parts[1] || 'Present';
+      // Auto-switch uploadMode depending on whether Date is present
+      if (hasDateColumn) {
+        setUploadMode('multi');
+      } else {
+        setUploadMode('single');
+      }
+
+      const rows: any[] = [];
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i];
+        const parts = line.split(',').map(p => p.trim());
+        if (parts.length < 2) continue; // Skip empty/invalid lines
+
+        let dateVal = activeDate;
+        let empId = '';
+        let statusStr = '';
+        let punchIn = '08:00';
+        let punchOut = '17:00';
+
+        if (hasDateColumn) {
+          // Format: Date, EmployeeID, Status, PunchIn, PunchOut
+          if (parts.length < 3) {
+            throw new Error(`Row ${i + 1} has insufficient columns for Multi-Day format. Need at least Date, EmployeeID, Status.`);
+          }
+          dateVal = parts[0];
+          empId = parts[1];
+          statusStr = parts[2] || 'Present';
+          punchIn = parts[3] || '08:00';
+          punchOut = parts[4] || '17:00';
+
+          // Validate date format (YYYY-MM-DD)
+          const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+          if (!dateRegex.test(dateVal)) {
+            throw new Error(`Row ${i + 1} has invalid Date format: "${dateVal}". Must be in YYYY-MM-DD format.`);
+          }
+        } else {
+          // Format: EmployeeID, Status, PunchIn, PunchOut
+          empId = parts[0];
+          statusStr = parts[1] || 'Present';
+          punchIn = parts[2] || '08:00';
+          punchOut = parts[3] || '17:00';
+        }
         
         let status: AttendanceStatus = 'Present';
-        if (statusStr.toLowerCase().includes('absent')) status = 'Absent';
-        if (statusStr.toLowerCase().includes('leave')) status = 'Leave';
-
-        const punchIn = parts[2] || '08:00';
-        const punchOut = parts[3] || '17:00';
+        const lowerStatus = statusStr.toLowerCase();
+        if (lowerStatus.includes('absent')) status = 'Absent';
+        else if (lowerStatus.includes('leave')) status = 'Leave';
 
         const empExists = employees.some(emp => emp.id.toLowerCase() === empId.toLowerCase());
         const matchedEmp = employees.find(emp => emp.id.toLowerCase() === empId.toLowerCase());
 
         rows.push({
-          rowNum: idx + 2,
+          rowNum: i + 1,
+          date: dateVal,
           employeeId: matchedEmp ? matchedEmp.id : empId,
           employeeName: matchedEmp ? matchedEmp.name : 'Unknown ID',
           exists: empExists,
           status,
-          punchIn,
-          punchOut
+          punchIn: status === 'Present' ? punchIn : undefined,
+          punchOut: status === 'Present' ? punchOut : undefined,
         });
-      });
+      }
 
       setImportPreview(rows);
     } catch (err: any) {
@@ -78,44 +117,112 @@ export const AttendanceTracker: React.FC = () => {
   const applyImportedAttendance = () => {
     if (importPreview.length === 0) return;
 
-    setLocalRecords(prev => {
-      const updated = { ...prev };
-      importPreview.forEach(row => {
-        if (row.exists) {
-          updated[row.employeeId] = {
-            status: row.status,
-            punchIn: row.status === 'Present' ? row.punchIn : undefined,
-            punchOut: row.status === 'Present' ? row.punchOut : undefined,
-          };
-        }
+    // Direct save to global state for multi-day
+    if (uploadMode === 'multi') {
+      const formatted: AttendanceRecord[] = importPreview
+        .filter(row => row.exists)
+        .map(row => ({
+          employeeId: row.employeeId,
+          date: row.date,
+          status: row.status,
+          punchIn: row.punchIn,
+          punchOut: row.punchOut,
+        }));
+      
+      saveAttendance(formatted);
+      
+      // Also update localRecords for active date if it was present
+      const activeDateImports = importPreview.filter(row => row.date === activeDate && row.exists);
+      if (activeDateImports.length > 0) {
+        setLocalRecords(prev => {
+          const updated = { ...prev };
+          activeDateImports.forEach(row => {
+            updated[row.employeeId] = {
+              status: row.status,
+              punchIn: row.punchIn || employees.find(e => e.id === row.employeeId)?.standardShiftStart || '08:00',
+              punchOut: row.punchOut || '17:00',
+            };
+          });
+          return updated;
+        });
+      }
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
+    } else {
+      // Single day, apply locally to localRecords
+      setLocalRecords(prev => {
+        const updated = { ...prev };
+        importPreview.forEach(row => {
+          if (row.exists) {
+            updated[row.employeeId] = {
+              status: row.status,
+              punchIn: row.status === 'Present' ? (row.punchIn || '08:00') : undefined,
+              punchOut: row.status === 'Present' ? (row.punchOut || '17:00') : undefined,
+            };
+          }
+        });
+        return updated;
       });
-      return updated;
-    });
+    }
 
     setIsImportModalOpen(false);
     setImportPreview([]);
   };
 
-  const downloadAttendanceTemplate = () => {
-    const headers = 'EmployeeID,Status,PunchIn,PunchOut\n';
-    let rows = '';
-    if (employees.length > 0) {
-      employees.forEach((emp, index) => {
-        const isAbsent = index === 1; // Mark the second employee as absent as an example
-        rows += `${emp.id},${isAbsent ? 'Absent' : 'Present'},${isAbsent ? '' : emp.standardShiftStart},${isAbsent ? '' : '17:00'}\n`;
-      });
+  const downloadAttendanceTemplate = (type: 'single' | 'multi' = 'multi') => {
+    if (type === 'multi') {
+      const headers = 'Date,EmployeeID,Status,PunchIn,PunchOut\n';
+      let rows = '';
+      
+      const current = new Date(activeDate.replace(/-/g, '/'));
+      const d1 = current.toISOString().split('T')[0];
+      
+      const next = new Date(current);
+      next.setDate(next.getDate() + 1);
+      const d2 = next.toISOString().split('T')[0];
+
+      if (employees.length > 0) {
+        employees.forEach((emp, idx) => {
+          const dateStr = idx % 2 === 0 ? d1 : d2;
+          const isAbsent = idx === 1;
+          rows += `${dateStr},${emp.id},${isAbsent ? 'Absent' : 'Present'},${isAbsent ? '' : emp.standardShiftStart},${isAbsent ? '' : '17:00'}\n`;
+        });
+      } else {
+        rows += `${d1},EMP001,Present,08:00,17:00\n`;
+        rows += `${d1},EMP002,Absent,,\n`;
+        rows += `${d2},EMP001,Present,08:00,17:00\n`;
+        rows += `${d2},EMP002,Present,08:00,17:00\n`;
+      }
+      
+      const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(headers + rows);
+      const link = document.createElement('a');
+      link.setAttribute('href', csvContent);
+      link.setAttribute('download', `attendance_multiday_template.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     } else {
-      rows += 'EMP-001,Present,08:30,17:30\n';
-      rows += 'EMP-002,Absent,,\n';
-      rows += 'EMP-003,Present,08:00,17:00\n';
+      const headers = 'EmployeeID,Status,PunchIn,PunchOut\n';
+      let rows = '';
+      if (employees.length > 0) {
+        employees.forEach((emp, index) => {
+          const isAbsent = index === 1;
+          rows += `${emp.id},${isAbsent ? 'Absent' : 'Present'},${isAbsent ? '' : emp.standardShiftStart},${isAbsent ? '' : '17:00'}\n`;
+        });
+      } else {
+        rows += 'EMP001,Present,08:30,17:30\n';
+        rows += 'EMP002,Absent,,\n';
+        rows += 'EMP003,Present,08:00,17:00\n';
+      }
+      const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(headers + rows);
+      const link = document.createElement('a');
+      link.setAttribute('href', csvContent);
+      link.setAttribute('download', `attendance_daily_template_${activeDate}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
-    const csvContent = 'data:text/csv;charset=utf-8,' + encodeURIComponent(headers + rows);
-    const link = document.createElement('a');
-    link.setAttribute('href', csvContent);
-    link.setAttribute('download', `attendance_template_${activeDate}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   // Initialize local status state when activeDate or employees change
@@ -482,7 +589,11 @@ export const AttendanceTracker: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              onClick={() => setIsImportModalOpen(false)}
+              onClick={() => {
+                setIsImportModalOpen(false);
+                setImportPreview([]);
+                setImportError(null);
+              }}
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs"
             />
             
@@ -491,18 +602,24 @@ export const AttendanceTracker: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="relative w-full max-w-2xl bg-white rounded-3xl border border-slate-100 shadow-2xl overflow-hidden z-10"
+              className="relative w-full max-w-2xl bg-white rounded-3xl border-4 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] overflow-hidden z-10"
             >
-              <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div className="bg-slate-50 px-6 py-4 border-b-4 border-black flex items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-slate-900 flex items-center gap-2">
+                  <h3 className="font-extrabold text-slate-900 flex items-center gap-2 text-base sm:text-lg uppercase tracking-tight">
                     <Upload className="h-5 w-5 text-indigo-600" />
-                    Upload Daily Attendance Logs
+                    Bulk Attendance Upload
                   </h3>
-                  <p className="text-xs text-slate-500">Bulk apply punch-in and punch-out check-ins for {formatReadableDate(activeDate)}.</p>
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">
+                    Import attendance logs using CSV file
+                  </p>
                 </div>
                 <button
-                  onClick={() => setIsImportModalOpen(false)}
+                  onClick={() => {
+                    setIsImportModalOpen(false);
+                    setImportPreview([]);
+                    setImportError(null);
+                  }}
                   className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/55 rounded-lg transition"
                 >
                   <X className="h-5 w-5" />
@@ -510,38 +627,93 @@ export const AttendanceTracker: React.FC = () => {
               </div>
 
               <div className="p-6 space-y-4 max-h-[65vh] overflow-y-auto">
-                {/* Format Instructions */}
-                <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100/50 text-xs text-indigo-950 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-bold block text-indigo-900 text-[13px]">Standard Attendance CSV Format</span>
+                {/* Upload Mode Tabs (Only visible when no file is uploaded yet, to guide the user) */}
+                {importPreview.length === 0 && (
+                  <div className="flex border-2 border-black rounded-xl p-1 bg-slate-100">
                     <button
                       type="button"
-                      onClick={downloadAttendanceTemplate}
-                      className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-1.5 text-[11px] font-semibold shadow-xs transition"
+                      onClick={() => setUploadMode('multi')}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                        uploadMode === 'multi'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
                     >
-                      <Download className="h-3.5 w-3.5" />
-                      Download Template CSV
+                      📅 Multi-Day (Date Range) Bulk Upload
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUploadMode('single')}
+                      className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${
+                        uploadMode === 'single'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      📆 Daily (Single Day) Upload
                     </button>
                   </div>
-                  <p className="text-slate-600 leading-relaxed">
-                    Ensure your CSV has a header row and follows this exact column order:
-                  </p>
-                  <div className="bg-slate-900 text-slate-200 p-3 rounded-xl font-mono text-[11px] overflow-x-auto select-all">
-                    EmployeeID, Status, PunchIn, PunchOut
-                    <br />
-                    EMP-001, Present, 08:15, 17:30
-                    <br />
-                    EMP-002, Absent, , 
-                    <br />
-                    EMP-003, Present, 08:35, 18:05
+                )}
+
+                {/* Format Instructions */}
+                <div className="p-4 bg-indigo-50/50 rounded-2xl border-2 border-indigo-200 text-xs text-indigo-950 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="font-black text-indigo-900 text-sm uppercase tracking-wide">
+                        {uploadMode === 'multi' ? '📅 Multi-Day CSV Structure' : '📆 Single-Day CSV Structure'}
+                      </span>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">
+                        {uploadMode === 'multi' 
+                          ? 'Upload multiple dates together in one file'
+                          : `Applies strictly to selected date: ${formatReadableDate(activeDate)}`
+                        }
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => downloadAttendanceTemplate(uploadMode)}
+                      className="px-3 py-1.5 border-2 border-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center gap-1.5 text-xs font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-all cursor-pointer"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download Template
+                    </button>
                   </div>
-                  <div className="text-[10px] text-indigo-700/80 leading-tight">
-                    * <strong>Status</strong> can be <code>Present</code>, <code>Absent</code>, or <code>Leave</code>. PunchIn & PunchOut times use 24-hour format (HH:MM).
+
+                  <p className="text-slate-600 leading-relaxed font-semibold">
+                    Ensure your CSV has a header row and matches this structure exactly:
+                  </p>
+                  
+                  {uploadMode === 'multi' ? (
+                    <div className="bg-slate-900 text-slate-200 p-3 rounded-xl font-mono text-[11px] overflow-x-auto select-all border-2 border-black">
+                      Date, EmployeeID, Status, PunchIn, PunchOut
+                      <br />
+                      2026-06-29, EMP001, Present, 08:15, 17:30
+                      <br />
+                      2026-06-29, EMP002, Absent, , 
+                      <br />
+                      2026-06-30, EMP001, Present, 08:00, 17:00
+                    </div>
+                  ) : (
+                    <div className="bg-slate-900 text-slate-200 p-3 rounded-xl font-mono text-[11px] overflow-x-auto select-all border-2 border-black">
+                      EmployeeID, Status, PunchIn, PunchOut
+                      <br />
+                      EMP001, Present, 08:15, 17:30
+                      <br />
+                      EMP002, Absent, , 
+                      <br />
+                      EMP003, Present, 08:35, 18:05
+                    </div>
+                  )}
+
+                  <div className="text-[10px] text-indigo-700/80 leading-tight font-bold">
+                    * <strong>Status</strong>: <code>Present</code>, <code>Absent</code>, or <code>Leave</code>.
+                    {uploadMode === 'multi' && <span> <strong>Date</strong> must be in <code>YYYY-MM-DD</code> format (e.g. <code>2026-06-29</code>).</span>}
+                    <span> 24-hour time format (HH:MM) is required for punch times.</span>
                   </div>
                 </div>
 
                 {/* File Uploader */}
-                <div className="border-2 border-dashed border-slate-200 hover:border-indigo-400 transition rounded-2xl p-6 text-center relative bg-slate-50/30">
+                <div className="border-2 border-dashed border-slate-300 hover:border-indigo-500 transition rounded-2xl p-6 text-center relative bg-slate-50/50 hover:bg-slate-50 transition-all cursor-pointer">
                   <input
                     type="file"
                     accept=".csv"
@@ -549,65 +721,69 @@ export const AttendanceTracker: React.FC = () => {
                     className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                   />
                   <div className="flex flex-col items-center justify-center gap-2 pointer-events-none">
-                    <FileSpreadsheet className="h-10 w-10 text-slate-400" />
+                    <FileSpreadsheet className="h-10 w-10 text-indigo-500" />
                     <div>
-                      <span className="text-xs font-bold text-slate-700 block">Click to select or drag & drop CSV file</span>
-                      <span className="text-[10px] text-slate-400">Supported formats: standard comma-separated .csv files</span>
+                      <span className="text-xs font-bold text-slate-700 block uppercase tracking-wide">Select or drag & drop CSV file</span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase mt-1">Accepts standard .csv files</span>
                     </div>
                   </div>
                 </div>
 
                 {/* Parsing Errors */}
                 {importError && (
-                  <div className="p-3 bg-rose-50 border border-rose-100 text-rose-700 text-xs rounded-xl">
-                    <strong>Error parsing file:</strong> {importError}
+                  <div className="p-3 bg-rose-50 border-2 border-rose-500 text-rose-800 text-xs rounded-xl font-bold">
+                    ⚠️ Error parsing file: {importError}
                   </div>
                 )}
 
                 {/* Preview Panel */}
                 {importPreview.length > 0 && (
-                  <div className="space-y-2">
+                  <div className="space-y-2 pt-2 border-t-2 border-slate-100">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-700 uppercase tracking-wider font-mono">Preview ({importPreview.length} Records Parsed)</span>
+                      <span className="text-xs font-black text-slate-700 uppercase tracking-wider">
+                        📋 {importPreview.length} Records Parsed ({uploadMode === 'multi' ? 'Multi-Day Mode' : 'Single-Day Mode'})
+                      </span>
                       <button
                         onClick={() => { setImportPreview([]); }}
-                        className="text-[10px] text-rose-600 hover:underline font-bold"
+                        className="text-xs text-rose-600 hover:text-rose-800 font-bold uppercase tracking-wide hover:underline cursor-pointer"
                       >
                         Clear File
                       </button>
                     </div>
-                    <div className="border border-slate-100 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+                    <div className="border border-slate-200 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
-                          <tr className="bg-slate-50 border-b border-slate-100">
-                            <th className="p-2.5 font-bold text-slate-600">ID</th>
-                            <th className="p-2.5 font-bold text-slate-600">Employee Name</th>
-                            <th className="p-2.5 font-bold text-slate-600">Status</th>
-                            <th className="p-2.5 font-bold text-slate-600">Punch In</th>
-                            <th className="p-2.5 font-bold text-slate-600">Punch Out</th>
-                            <th className="p-2.5 font-bold text-slate-600">Status Verify</th>
+                          <tr className="bg-slate-50 border-b border-slate-200">
+                            {uploadMode === 'multi' && <th className="p-2.5 font-extrabold text-slate-600 uppercase tracking-wider">Date</th>}
+                            <th className="p-2.5 font-extrabold text-slate-600 uppercase tracking-wider">ID</th>
+                            <th className="p-2.5 font-extrabold text-slate-600 uppercase tracking-wider">Employee Name</th>
+                            <th className="p-2.5 font-extrabold text-slate-600 uppercase tracking-wider">Status</th>
+                            <th className="p-2.5 font-extrabold text-slate-600 uppercase tracking-wider">Punch In</th>
+                            <th className="p-2.5 font-extrabold text-slate-600 uppercase tracking-wider">Punch Out</th>
+                            <th className="p-2.5 font-extrabold text-slate-600 uppercase tracking-wider">Verify</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {importPreview.map((row, index) => (
                             <tr key={index} className="hover:bg-slate-50/50">
-                              <td className="p-2.5 font-mono text-slate-700 font-semibold">{row.employeeId}</td>
+                              {uploadMode === 'multi' && <td className="p-2.5 font-mono text-slate-700 font-bold">{row.date}</td>}
+                              <td className="p-2.5 font-mono text-indigo-700 font-bold">{row.employeeId}</td>
                               <td className="p-2.5 font-semibold text-slate-800">{row.employeeName}</td>
                               <td className="p-2.5">
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                  row.status === 'Present' ? 'bg-emerald-50 text-emerald-700' :
-                                  row.status === 'Absent' ? 'bg-rose-50 text-rose-700' : 'bg-slate-100 text-slate-700'
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                  row.status === 'Present' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                  row.status === 'Absent' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-slate-100 text-slate-700 border border-slate-200'
                                 }`}>
                                   {row.status}
                                 </span>
                               </td>
-                              <td className="p-2.5 font-mono text-slate-600">{row.status === 'Present' ? row.punchIn : '—'}</td>
-                              <td className="p-2.5 font-mono text-slate-600">{row.status === 'Present' ? row.punchOut : '—'}</td>
+                              <td className="p-2.5 font-mono text-slate-600 font-semibold">{row.status === 'Present' ? row.punchIn : '—'}</td>
+                              <td className="p-2.5 font-mono text-slate-600 font-semibold">{row.status === 'Present' ? row.punchOut : '—'}</td>
                               <td className="p-2.5">
                                 {row.exists ? (
-                                  <span className="text-[10px] text-emerald-600 font-bold">✓ Ready</span>
+                                  <span className="text-[10px] text-emerald-600 font-extrabold uppercase">✓ Valid</span>
                                 ) : (
-                                  <span className="text-[10px] text-rose-600 font-bold">⚠️ ID Not Found</span>
+                                  <span className="text-[10px] text-rose-600 font-extrabold uppercase">⚠️ Not Found</span>
                                 )}
                               </td>
                             </tr>
@@ -620,11 +796,15 @@ export const AttendanceTracker: React.FC = () => {
               </div>
 
               {/* Footer */}
-              <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+              <div className="bg-slate-50 px-6 py-4 border-t-2 border-slate-100 flex items-center justify-end gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsImportModalOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-xl transition"
+                  onClick={() => {
+                    setIsImportModalOpen(false);
+                    setImportPreview([]);
+                    setImportError(null);
+                  }}
+                  className="px-4 py-2 border-2 border-black bg-white hover:bg-slate-100 text-black rounded-xl font-bold text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-all cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -632,11 +812,11 @@ export const AttendanceTracker: React.FC = () => {
                   type="button"
                   disabled={importPreview.length === 0}
                   onClick={applyImportedAttendance}
-                  className={`px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition rounded-xl ${
-                    importPreview.length === 0 ? 'opacity-50 cursor-not-allowed' : ''
+                  className={`px-4 py-2 border-2 border-black bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-all cursor-pointer ${
+                    importPreview.length === 0 ? 'opacity-50 cursor-not-allowed shadow-none' : ''
                   }`}
                 >
-                  Apply to Daily Logs
+                  {uploadMode === 'multi' ? 'Save Bulk Logs Directly' : 'Apply to Daily Logs'}
                 </button>
               </div>
             </motion.div>
