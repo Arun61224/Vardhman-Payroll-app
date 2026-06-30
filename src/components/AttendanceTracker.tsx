@@ -60,8 +60,8 @@ export const AttendanceTracker: React.FC = () => {
         let dateVal = activeDate;
         let empId = '';
         let statusStr = '';
-        let punchIn = '08:00';
-        let punchOut = '17:00';
+        let punchIn: string | undefined = undefined;
+        let punchOut: string | undefined = undefined;
 
         // Find employee shift start as a fallback
         const checkEmpId = hasDateColumn ? parts[1] : parts[0];
@@ -75,9 +75,12 @@ export const AttendanceTracker: React.FC = () => {
           }
           dateVal = parts[0];
           empId = parts[1];
-          statusStr = parts[2] || 'Present';
-          punchIn = normalizeTime(parts[3], empShift);
-          punchOut = normalizeTime(parts[4], '17:00');
+          statusStr = parts[2];
+          
+          const rawIn = parts[3];
+          const rawOut = parts[4];
+          punchIn = (rawIn && rawIn !== '-' && rawIn.trim() !== '') ? normalizeTime(rawIn, empShift) : undefined;
+          punchOut = (rawOut && rawOut !== '-' && rawOut.trim() !== '') ? normalizeTime(rawOut, '17:00') : undefined;
 
           // Validate date format (YYYY-MM-DD)
           const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -87,15 +90,20 @@ export const AttendanceTracker: React.FC = () => {
         } else {
           // Format: EmployeeID, Status, PunchIn, PunchOut
           empId = parts[0];
-          statusStr = parts[1] || 'Present';
-          punchIn = normalizeTime(parts[2], empShift);
-          punchOut = normalizeTime(parts[3], '17:00');
+          statusStr = parts[1];
+          
+          const rawIn = parts[2];
+          const rawOut = parts[3];
+          punchIn = (rawIn && rawIn !== '-' && rawIn.trim() !== '') ? normalizeTime(rawIn, empShift) : undefined;
+          punchOut = (rawOut && rawOut !== '-' && rawOut.trim() !== '') ? normalizeTime(rawOut, '17:00') : undefined;
         }
         
         let status: AttendanceStatus = 'Present';
-        const lowerStatus = statusStr.toLowerCase();
-        if (lowerStatus.includes('absent')) status = 'Absent';
-        else if (lowerStatus.includes('leave')) status = 'Leave';
+        if (statusStr) {
+          const lowerStatus = statusStr.toLowerCase();
+          if (lowerStatus.includes('absent')) status = 'Absent';
+          else if (lowerStatus.includes('leave')) status = 'Leave';
+        }
 
         const empExists = employees.some(emp => emp.id.toLowerCase() === empId.toLowerCase());
 
@@ -106,8 +114,8 @@ export const AttendanceTracker: React.FC = () => {
           employeeName: matchedEmp ? matchedEmp.name : 'Unknown ID',
           exists: empExists,
           status,
-          punchIn: status === 'Present' ? punchIn : undefined,
-          punchOut: status === 'Present' ? punchOut : undefined,
+          punchIn,
+          punchOut,
         });
       }
 
@@ -141,11 +149,10 @@ export const AttendanceTracker: React.FC = () => {
         setLocalRecords(prev => {
           const updated = { ...prev };
           activeDateImports.forEach(row => {
-            const shiftStart = employees.find(e => e.id === row.employeeId)?.standardShiftStart || '08:00';
             updated[row.employeeId] = {
               status: row.status,
-              punchIn: row.punchIn ? normalizeTime(row.punchIn) : normalizeTime(shiftStart),
-              punchOut: row.punchOut ? normalizeTime(row.punchOut) : '17:00',
+              punchIn: row.punchIn ? normalizeTime(row.punchIn) : undefined,
+              punchOut: row.punchOut ? normalizeTime(row.punchOut) : undefined,
             };
           });
           return updated;
@@ -160,11 +167,10 @@ export const AttendanceTracker: React.FC = () => {
         const updated = { ...prev };
         importPreview.forEach(row => {
           if (row.exists) {
-            const shiftStart = employees.find(e => e.id === row.employeeId)?.standardShiftStart || '08:00';
             updated[row.employeeId] = {
               status: row.status,
-              punchIn: row.status === 'Present' ? normalizeTime(row.punchIn || shiftStart) : undefined,
-              punchOut: row.status === 'Present' ? normalizeTime(row.punchOut || '17:00') : undefined,
+              punchIn: row.status === 'Present' && row.punchIn ? normalizeTime(row.punchIn) : undefined,
+              punchOut: row.status === 'Present' && row.punchOut ? normalizeTime(row.punchOut) : undefined,
             };
           }
         });
@@ -242,8 +248,8 @@ export const AttendanceTracker: React.FC = () => {
       if (match) {
         recordsForDate[emp.id] = {
           status: match.status,
-          punchIn: normalizeTime(match.punchIn || emp.standardShiftStart),
-          punchOut: normalizeTime(match.punchOut || '17:00'), // Default 9 hours later if shift is 8am
+          punchIn: (match.punchIn && match.punchIn !== '-') ? normalizeTime(match.punchIn) : undefined,
+          punchOut: (match.punchOut && match.punchOut !== '-') ? normalizeTime(match.punchOut) : undefined,
         };
       } else {
         // Default record
@@ -504,7 +510,7 @@ export const AttendanceTracker: React.FC = () => {
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Punch In</label>
                             <input
                               type="time"
-                              value={localState.punchIn}
+                              value={localState.punchIn || ''}
                               onChange={(e) => handlePunchChange(emp.id, 'punchIn', e.target.value)}
                               className="px-2.5 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white font-mono text-xs font-semibold text-slate-700"
                             />
@@ -516,7 +522,7 @@ export const AttendanceTracker: React.FC = () => {
                             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Punch Out</label>
                             <input
                               type="time"
-                              value={localState.punchOut}
+                              value={localState.punchOut || ''}
                               onChange={(e) => handlePunchChange(emp.id, 'punchOut', e.target.value)}
                               className="px-2.5 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white font-mono text-xs font-semibold text-slate-700"
                             />
