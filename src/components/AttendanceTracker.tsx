@@ -300,16 +300,42 @@ export const AttendanceTracker: React.FC = () => {
   const handleSave = () => {
     const formatted: AttendanceRecord[] = Object.keys(localRecords).map((empId) => {
       const rec = localRecords[empId];
+      const hasPunchIn = !!(rec.punchIn && rec.punchIn.trim() !== '' && rec.punchIn !== '-');
+      const hasPunchOut = !!(rec.punchOut && rec.punchOut.trim() !== '' && rec.punchOut !== '-');
+      
+      let finalStatus = rec.status;
+      if (finalStatus === 'Present' && !hasPunchIn && !hasPunchOut) {
+        finalStatus = 'Absent';
+      }
+
       return {
         employeeId: empId,
         date: activeDate,
-        status: rec.status,
-        punchIn: rec.status === 'Present' ? rec.punchIn : undefined,
-        punchOut: rec.status === 'Present' ? rec.punchOut : undefined,
+        status: finalStatus,
+        punchIn: finalStatus === 'Present' ? rec.punchIn : undefined,
+        punchOut: finalStatus === 'Present' ? rec.punchOut : undefined,
       };
     });
 
     saveAttendance(formatted);
+
+    // Synchronize localRecords state so UI updates the buttons and details instantly
+    setLocalRecords((prev) => {
+      const updated = { ...prev };
+      Object.keys(updated).forEach((empId) => {
+        const rec = updated[empId];
+        const hasPunchIn = !!(rec.punchIn && rec.punchIn.trim() !== '' && rec.punchIn !== '-');
+        const hasPunchOut = !!(rec.punchOut && rec.punchOut.trim() !== '' && rec.punchOut !== '-');
+        if (rec.status === 'Present' && !hasPunchIn && !hasPunchOut) {
+          updated[empId] = {
+            ...rec,
+            status: 'Absent',
+          };
+        }
+      });
+      return updated;
+    });
+
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
   };
@@ -443,8 +469,11 @@ export const AttendanceTracker: React.FC = () => {
               const localState = localRecords[emp.id] || { status: 'Present', punchIn: emp.standardShiftStart, punchOut: '17:00' };
               const isPresent = localState.status === 'Present';
               
+              const hasPunchIn = !!(localState.punchIn && localState.punchIn.trim() !== '' && localState.punchIn !== '-');
+              const hasPunchOut = !!(localState.punchOut && localState.punchOut.trim() !== '' && localState.punchOut !== '-');
+
               // Project metrics in real-time
-              const hoursWorked = isPresent && localState.punchIn && localState.punchOut
+              const hoursWorked = isPresent && hasPunchIn && hasPunchOut
                 ? calculateHoursWorked(localState.punchIn, localState.punchOut)
                 : 0;
 
@@ -534,24 +563,41 @@ export const AttendanceTracker: React.FC = () => {
                           <div className="space-y-1">
                             <div className="text-xs text-slate-600 flex items-center gap-1.5 font-medium">
                               <Clock className="h-3.5 w-3.5 text-slate-400" />
-                              Duration: <strong className="text-slate-800">{hoursWorked.toFixed(2)} hours</strong>
+                              Duration: <strong className="text-slate-800">
+                                {hasPunchIn && hasPunchOut ? `${hoursWorked.toFixed(2)} hours` : '-- hours'}
+                              </strong>
                             </div>
                             
-                            {/* Grace & late alerts */}
-                            {isLate ? (
+                            {/* Grace & late alerts / Missing punches alerts */}
+                            {!hasPunchIn && !hasPunchOut ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                No Punches (Marked Absent)
+                              </span>
+                            ) : hasPunchIn && !hasPunchOut ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                No Punch Out
+                              </span>
+                            ) : !hasPunchIn && hasPunchOut ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
+                                <AlertTriangle className="h-3 w-3 shrink-0" />
+                                No Punch In
+                              </span>
+                            ) : isLate ? (
                               lateExceeded ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100/30">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
                                   <AlertTriangle className="h-3 w-3 shrink-0" />
                                   Late by {lateMinutes}m (Deduction: -₹{projectedPenalty.toFixed(1)})
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100/30">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">
                                   <Clock className="h-3 w-3 shrink-0" />
                                   Late by {lateMinutes}m (Excused under {gracePeriod}m grace)
                                 </span>
                               )
                             ) : (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100/30">
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
                                 <Check className="h-3 w-3 shrink-0" />
                                 Punch on-time
                               </span>
@@ -559,7 +605,7 @@ export const AttendanceTracker: React.FC = () => {
                           </div>
 
                           {/* Overtime tag */}
-                          {isOvertime && (
+                          {isOvertime && hasPunchIn && hasPunchOut && (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-100">
                               ⭐ Overtime Bonus (+₹100)
                             </span>
