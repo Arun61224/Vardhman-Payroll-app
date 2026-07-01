@@ -132,7 +132,7 @@ export const PayrollGenerator: React.FC = () => {
         </div>
         <div className="space-y-0.5 border-t md:border-t-0 md:border-l border-indigo-100/50 md:pl-4 pt-2 md:pt-0">
           <span className="text-indigo-600 font-bold uppercase tracking-wide text-[10px] block">Leave ceilings</span>
-          Every employee is granted 1.5 days of paid leaves. Excess leaves trigger full 1-day pay deduction.
+          Staff is granted 1.5 days of paid leaves. Labour has no paid leaves (0 days). Excess leaves trigger full 1-day pay deduction.
         </div>
         <div className="space-y-0.5 border-t md:border-t-0 md:border-l border-indigo-100/50 md:pl-4 pt-2 md:pt-0">
           <span className="text-indigo-600 font-bold uppercase tracking-wide text-[10px] block">Overtime (OT)</span>
