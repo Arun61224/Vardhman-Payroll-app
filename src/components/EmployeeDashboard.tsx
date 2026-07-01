@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { normalizeTime } from '../utils/payroll';
 
 export const EmployeeDashboard: React.FC = () => {
-  const { employees, addEmployee, updateEmployee, bulkUpdateEmployees, deleteEmployee, resetToDemoData } = usePayroll();
+  const { employees, addEmployee, updateEmployee, bulkUpdateEmployees, deleteEmployee, deleteEmployees, resetToDemoData } = usePayroll();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   
@@ -32,6 +32,15 @@ export const EmployeeDashboard: React.FC = () => {
   // Validation / feedback states
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [deletingEmployee, setDeletingEmployee] = useState<{ id: string; name: string } | null>(null);
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+
+  // Sync selection in case employees list changes
+  React.useEffect(() => {
+    setSelectedIds((prev) => prev.filter((id) => employees.some((e) => e.id === id)));
+  }, [employees]);
 
   const startBulkEdit = () => {
     setBulkEmployeesState(JSON.parse(JSON.stringify(employees)));
@@ -295,6 +304,16 @@ export const EmployeeDashboard: React.FC = () => {
             </>
           ) : (
             <>
+              {selectedIds.length > 0 && (
+                <button
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 transition-all shadow-sm rounded-xl flex items-center gap-1.5 border border-rose-500"
+                  title="Remove selected employees in bulk"
+                >
+                  <Trash2 className="h-3.5 w-3.5 animate-pulse" />
+                  Delete Selected ({selectedIds.length})
+                </button>
+              )}
               <button
                 onClick={resetToDemoData}
                 className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 transition-colors rounded-xl flex items-center gap-1.5 border border-slate-200"
@@ -494,6 +513,20 @@ export const EmployeeDashboard: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/70 border-b border-slate-100">
+                  <th className="py-4 px-4 text-xs font-semibold text-slate-500 uppercase tracking-wider w-12 text-center select-none">
+                    <input
+                      type="checkbox"
+                      checked={employees.length > 0 && selectedIds.length === employees.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(employees.map((emp) => emp.id));
+                        } else {
+                          setSelectedIds([]);
+                        }
+                      }}
+                      className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                    />
+                  </th>
                   <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">ID</th>
                   <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Employee Name</th>
                   <th className="py-4 px-6 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role & Category</th>
@@ -507,8 +540,23 @@ export const EmployeeDashboard: React.FC = () => {
                 {employees.map((emp) => {
                   const oneDayWage = Math.round(emp.basicSalary / 30);
                   const hourlyWage = Math.round(oneDayWage / 9);
+                  const isChecked = selectedIds.includes(emp.id);
                   return (
-                    <tr key={emp.id} className="hover:bg-slate-50/40 transition-colors">
+                    <tr key={emp.id} className={`hover:bg-slate-50/40 transition-colors ${isChecked ? 'bg-indigo-50/15' : ''}`}>
+                      <td className="py-4 px-4 text-center select-none">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds((prev) => [...prev, emp.id]);
+                            } else {
+                              setSelectedIds((prev) => prev.filter((id) => id !== emp.id));
+                            }
+                          }}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 h-4 w-4 cursor-pointer"
+                        />
+                      </td>
                       <td className="py-4 px-6 text-sm font-mono text-slate-600 font-medium">{emp.id}</td>
                       <td className="py-4 px-6">
                         <div className="font-semibold text-slate-800">{emp.name}</div>
@@ -1001,6 +1049,91 @@ export const EmployeeDashboard: React.FC = () => {
                   className="px-4 py-2 border-2 border-black bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-all"
                 >
                   Yes, Remove
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Custom Bulk Delete Confirm Modal */}
+      <AnimatePresence>
+        {showBulkDeleteConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowBulkDeleteConfirm(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs"
+            />
+            
+            {/* Modal Card */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              className="relative w-full max-w-md bg-white rounded-3xl border-2 border-black shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] overflow-hidden z-10"
+            >
+              <div className="bg-rose-50 px-6 py-5 border-b-2 border-black flex items-center gap-3">
+                <div className="h-10 w-10 bg-rose-100 border border-rose-300 rounded-xl flex items-center justify-center text-rose-600">
+                  <Trash2 className="h-5 w-5 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 tracking-tight text-lg">Remove {selectedIds.length} Employees?</h3>
+                  <p className="text-[10px] text-rose-700/80 font-bold uppercase tracking-wider">BULK DATA PURGE</p>
+                </div>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <p className="text-slate-600 text-sm leading-relaxed">
+                  Are you absolutely sure you want to remove the <strong className="text-black">{selectedIds.length} selected employees</strong>?
+                </p>
+
+                <div className="max-h-28 overflow-y-auto bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1.5 custom-scrollbar">
+                  {selectedIds.map((id) => {
+                    const emp = employees.find((e) => e.id === id);
+                    return emp ? (
+                      <div key={id} className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                        <span>{emp.name}</span>
+                        <span className="font-mono text-[10px] text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded-md">{emp.id}</span>
+                      </div>
+                    ) : null;
+                  })}
+                </div>
+                
+                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-xs text-amber-900 flex gap-3">
+                  <span className="text-base select-none">⚠️</span>
+                  <div>
+                    <span className="font-bold block text-amber-950 mb-0.5">Destructive Side-Effects</span>
+                    <p className="leading-normal text-amber-800">
+                      This will permanently purge all selected employees from the directory and delete all of their attendance records and wage calculations. This is reversible by restoring logs individually.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions Footer */}
+              <div className="bg-slate-50 px-6 py-4 border-t-2 border-black flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkDeleteConfirm(false)}
+                  className="px-4 py-2 border-2 border-black bg-white hover:bg-slate-100 text-xs font-bold rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-all"
+                >
+                  No, Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    deleteEmployees(selectedIds);
+                    showToast(`Successfully removed ${selectedIds.length} employees.`);
+                    setSelectedIds([]);
+                    setShowBulkDeleteConfirm(false);
+                  }}
+                  className="px-4 py-2 border-2 border-black bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:translate-y-[-1px] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:translate-y-[1px] active:shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] transition-all"
+                >
+                  Yes, Remove All
                 </button>
               </div>
             </motion.div>
