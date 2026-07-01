@@ -355,7 +355,7 @@ export const PayrollStats: React.FC = () => {
           <div className="space-y-1">
             <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider block">Policy Compliance</span>
             <h4 className="font-bold text-slate-800">Leave Utilization</h4>
-            <p className="text-xs text-slate-600">Total leaves are safely monitored. Average leave count stays well within the <strong className="text-emerald-700">1.5 days allowance</strong> per member.</p>
+            <p className="text-xs text-slate-600">Total leaves are safely monitored. Staff leave count stays within the <strong className="text-emerald-700">1.5 days allowance</strong>, while Labour remains at 0.</p>
           </div>
         </div>
 
