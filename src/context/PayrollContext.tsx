@@ -13,6 +13,7 @@ interface PayrollContextType {
   updateEmployee: (emp: Employee) => void;
   bulkUpdateEmployees: (emps: Employee[]) => void;
   deleteEmployee: (id: string) => void;
+  deleteEmployees: (ids: string[]) => void;
   restoreEmployee: (id: string) => void;
   clearDeletedLogs: () => void;
   saveAttendance: (records: AttendanceRecord[], clearActiveDateEmpIds?: string[]) => void;
@@ -366,6 +367,30 @@ export const PayrollProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setAttendanceRecords((prev) => prev.filter((r) => r.employeeId !== id));
   };
 
+  const deleteEmployees = (ids: string[]) => {
+    const logsToAdd: DeletedEmployeeLog[] = [];
+    const timestamp = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    
+    ids.forEach((id) => {
+      const empToDelete = employees.find((e) => e.id === id);
+      if (empToDelete) {
+        logsToAdd.push({
+          id: empToDelete.id,
+          name: empToDelete.name,
+          type: empToDelete.type,
+          deletedAt: timestamp,
+          basicSalary: empToDelete.basicSalary,
+        });
+      }
+    });
+
+    if (logsToAdd.length > 0) {
+      setDeletedLogs((prev) => [...logsToAdd, ...prev]);
+    }
+    setEmployees((prev) => prev.filter((e) => !ids.includes(e.id)));
+    setAttendanceRecords((prev) => prev.filter((r) => !ids.includes(r.employeeId)));
+  };
+
   const restoreEmployee = (id: string) => {
     const logToRestore = deletedLogs.find((l) => l.id === id);
     if (logToRestore) {
@@ -434,6 +459,7 @@ export const PayrollProvider: React.FC<{ children: React.ReactNode }> = ({ child
         updateEmployee,
         bulkUpdateEmployees,
         deleteEmployee,
+        deleteEmployees,
         restoreEmployee,
         clearDeletedLogs,
         saveAttendance,
