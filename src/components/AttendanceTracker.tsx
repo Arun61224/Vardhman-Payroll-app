@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { usePayroll } from '../context/PayrollContext';
 import { AttendanceRecord, AttendanceStatus, Employee } from '../types';
 import { Calendar, Save, Check, Clock, AlertTriangle, Moon, HelpCircle, CheckCircle2, UserCheck, RefreshCw, Upload, X, FileSpreadsheet, Download } from 'lucide-react';
-import { isSunday, calculateHoursWorked, timeToMinutes, formatReadableDate, normalizeTime } from '../utils/payroll';
+import { isSunday, calculateHoursWorked, timeToMinutes, formatReadableDate, normalizeTime, formatHoursAndMinutes } from '../utils/payroll';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const AttendanceTracker: React.FC = () => {
@@ -650,7 +650,7 @@ export const AttendanceTracker: React.FC = () => {
                             <div className="text-xs text-slate-600 flex items-center gap-1.5 font-medium">
                               <Clock className="h-3.5 w-3.5 text-slate-400" />
                               Duration: <strong className="text-slate-800">
-                                {hasPunchIn && hasPunchOut ? `${hoursWorked.toFixed(2)} hours` : '-- hours'}
+                                {hasPunchIn && hasPunchOut ? formatHoursAndMinutes(hoursWorked) : '--'}
                               </strong>
                             </div>
                             
