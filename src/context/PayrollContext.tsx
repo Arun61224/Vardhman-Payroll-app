@@ -15,7 +15,7 @@ interface PayrollContextType {
   deleteEmployee: (id: string) => void;
   restoreEmployee: (id: string) => void;
   clearDeletedLogs: () => void;
-  saveAttendance: (records: AttendanceRecord[]) => void;
+  saveAttendance: (records: AttendanceRecord[], clearActiveDateEmpIds?: string[]) => void;
   setActiveDate: (date: string) => void;
   setActiveMonth: (month: number) => void;
   setActiveYear: (year: number) => void;
@@ -388,14 +388,23 @@ export const PayrollProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setDeletedLogs([]);
   };
 
-  const saveAttendance = (records: AttendanceRecord[]) => {
+  const saveAttendance = (records: AttendanceRecord[], clearActiveDateEmpIds?: string[]) => {
     setAttendanceRecords((prev) => {
       // Create a map of existing records to easily replace or merge
-      const filtered = prev.filter((r) => {
+      let filtered = prev.filter((r) => {
         // Remove existing records for the same employee and date
         const match = records.some((newR) => newR.employeeId === r.employeeId && newR.date === r.date);
         return !match;
       });
+
+      // Also remove any records for employees explicitly cleared for the active date
+      if (clearActiveDateEmpIds && clearActiveDateEmpIds.length > 0) {
+        filtered = filtered.filter((r) => {
+          const isCleared = r.date === activeDate && clearActiveDateEmpIds.includes(r.employeeId);
+          return !isCleared;
+        });
+      }
+
       return [...filtered, ...records];
     });
   };
