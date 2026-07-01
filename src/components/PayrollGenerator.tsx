@@ -60,6 +60,7 @@ export const PayrollGenerator: React.FC = () => {
       "Days Absent",
       "Total Late Minutes",
       "Late Deductions (INR)",
+      "Underwork Deductions (INR)",
       "Leave/Absent Deductions (INR)",
       "Overtime Bonuses (INR)",
       "Final Payable Salary (INR)",
@@ -79,6 +80,7 @@ export const PayrollGenerator: React.FC = () => {
       s.daysAbsent,
       s.totalLateMinutes,
       Math.round(s.totalLateDeductions),
+      Math.round(s.totalUnderworkDeductions || 0),
       Math.round(s.leaveDeductions),
       s.totalOvertimeBonuses,
       Math.round(s.finalPayableSalary),
@@ -480,6 +482,12 @@ export const PayrollGenerator: React.FC = () => {
                         <span className="text-slate-600">Late Entry Penalty</span>
                         <span className="font-semibold text-rose-600">-₹{selectedSummary.totalLateDeductions.toFixed(0)}</span>
                       </div>
+                      {selectedSummary.totalUnderworkDeductions !== undefined && selectedSummary.totalUnderworkDeductions > 0 && (
+                        <div className="py-2 flex items-center justify-between">
+                          <span className="text-slate-600">Underwork Penalty (Half/Short Day)</span>
+                          <span className="font-semibold text-rose-600">-₹{selectedSummary.totalUnderworkDeductions.toFixed(0)}</span>
+                        </div>
+                      )}
                       <div className="py-2 flex items-center justify-between">
                         <span className="text-slate-600">Excess Leaves & Absence</span>
                         <span className="font-semibold text-rose-600">-₹{selectedSummary.leaveDeductions.toFixed(0)}</span>
@@ -507,6 +515,7 @@ export const PayrollGenerator: React.FC = () => {
                         <span className="font-bold text-rose-600">
                           -₹{(
                             selectedSummary.totalLateDeductions +
+                            (selectedSummary.totalUnderworkDeductions || 0) +
                             selectedSummary.leaveDeductions +
                             selectedSummary.esiDeduction +
                             selectedSummary.pfDeduction +
@@ -568,13 +577,29 @@ export const PayrollGenerator: React.FC = () => {
                               {day.punchIn ? `${day.punchIn} - ${day.punchOut}` : '—'}
                             </td>
                             <td className="py-2.5 px-4 text-slate-700 font-medium">
-                              {day.hoursWorked > 0 ? formatHoursAndMinutes(day.hoursWorked) : '—'}
+                              {day.hoursWorked > 0 ? (
+                                <div className="space-y-0.5">
+                                  <div>{formatHoursAndMinutes(day.hoursWorked)}</div>
+                                  {day.actualWorkingHours !== undefined && day.actualWorkingHours !== day.hoursWorked && (
+                                    <div className="text-[10px] text-slate-400 font-normal">({formatHoursAndMinutes(day.actualWorkingHours)} net)</div>
+                                  )}
+                                </div>
+                              ) : '—'}
                             </td>
                             <td className="py-2.5 px-4 text-rose-600 font-mono font-medium">
                               {day.lateMinutes > 0 ? `${day.lateMinutes}m` : '0m'}
                             </td>
                             <td className="py-2.5 px-4 text-rose-600 font-mono font-medium">
-                              {day.lateDeduction > 0 ? `-₹${day.lateDeduction.toFixed(0)}` : '—'}
+                              {day.lateDeduction > 0 || (day.underworkDeduction && day.underworkDeduction > 0) ? (
+                                <div className="space-y-0.5 text-left">
+                                  {day.lateDeduction > 0 && (
+                                    <div title="Late Penalty">-₹{day.lateDeduction.toFixed(0)} <span className="text-[10px] text-slate-400">(Late)</span></div>
+                                  )}
+                                  {day.underworkDeduction && day.underworkDeduction > 0 ? (
+                                    <div title="Underwork Penalty" className="text-amber-700">-₹{day.underworkDeduction.toFixed(0)} <span className="text-[10px] text-amber-500">(Under)</span></div>
+                                  ) : null}
+                                </div>
+                              ) : '—'}
                             </td>
                             <td className="py-2.5 px-4 text-purple-700 font-bold font-mono">
                               {day.overtimeBonus > 0 ? `+₹${day.overtimeBonus}` : '—'}
