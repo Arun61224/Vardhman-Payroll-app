@@ -28,9 +28,11 @@ export interface DayPayrollDetails {
   punchIn?: string;
   punchOut?: string;
   hoursWorked: number;
+  actualWorkingHours?: number; // for Staff, excluding lunch break
   dailyWage: number;
   lateMinutes: number;
   lateDeduction: number;
+  underworkDeduction?: number; // half-day or short-day deduction
   overtimeBonus: number;
   netPay: number;
   explanation: string;
@@ -51,6 +53,7 @@ export interface MonthlyPayrollSummary {
   totalHoursWorked: number;
   totalLateMinutes: number;
   totalLateDeductions: number;
+  totalUnderworkDeductions?: number;
   totalOvertimeBonuses: number;
   
   leaveDeductions: number; // from leaves > 1.5 days
