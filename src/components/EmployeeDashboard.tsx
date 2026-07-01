@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { normalizeTime } from '../utils/payroll';
 
 export const EmployeeDashboard: React.FC = () => {
-  const { employees, addEmployee, updateEmployee, bulkUpdateEmployees, deleteEmployee, deleteEmployees, resetToDemoData } = usePayroll();
+  const { employees, addEmployee, updateEmployee, bulkUpdateEmployees, deleteEmployee, deleteEmployees } = usePayroll();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   
@@ -314,14 +314,6 @@ export const EmployeeDashboard: React.FC = () => {
                   Delete Selected ({selectedIds.length})
                 </button>
               )}
-              <button
-                onClick={resetToDemoData}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-slate-50 hover:bg-slate-100 transition-colors rounded-xl flex items-center gap-1.5 border border-slate-200"
-                title="Reset to Demo Defaults"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                Reset Demo
-              </button>
               <button
                 onClick={() => setIsCsvModalOpen(true)}
                 className="px-4 py-2 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors rounded-xl flex items-center gap-1.5 border border-indigo-100"
