@@ -138,6 +138,9 @@ function PayrollAppContent() {
   const [activeTab, setActiveTab] = useState<TabId>('directory');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { deletedLogs, restoreEmployee, clearDeletedLogs } = usePayroll();
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false);
+  const [clearPassword, setClearPassword] = useState('');
+  const [passwordError, setPasswordError] = useState(false);
 
   const tabs = [
     { id: 'directory', label: 'Employee Directory', shortLabel: 'Directory', icon: Users, description: 'Manage personnel & salaries' },
@@ -263,57 +266,123 @@ function PayrollAppContent() {
                   <Trash2 className="h-3.5 w-3.5 animate-pulse" />
                   Deleted Logs
                 </span>
-                {deletedLogs.length > 0 && (
+                {deletedLogs.length > 0 && !showPasswordPrompt && (
                   <button
-                    onClick={clearDeletedLogs}
-                    className="text-[9px] font-extrabold text-slate-400 hover:text-slate-600 uppercase cursor-pointer"
+                    onClick={() => {
+                      setShowPasswordPrompt(true);
+                      setClearPassword('');
+                      setPasswordError(false);
+                    }}
+                    className="text-[9px] font-extrabold text-slate-400 hover:text-rose-600 uppercase cursor-pointer transition-colors"
                   >
                     Clear All
                   </button>
                 )}
               </div>
               
-              <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                {deletedLogs.length === 0 ? (
-                  <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center text-[10px] text-slate-400 font-semibold italic">
-                    No recently deleted employees
+              {showPasswordPrompt ? (
+                <div className="p-3 bg-slate-50 border-2 border-black rounded-xl space-y-2.5 shadow-sm">
+                  <div className="text-[10px] font-bold text-slate-700 flex items-center gap-1">
+                    <Lock className="h-3 w-3 text-rose-500" />
+                    Enter Admin Password to Clear Logs
                   </div>
-                ) : (
-                  deletedLogs.slice(0, 5).map((log) => (
-                    <div
-                      key={log.id}
-                      className="p-2.5 bg-rose-50/50 hover:bg-rose-50 border border-rose-100 rounded-xl flex items-center justify-between text-[11px] group transition"
+                  <input
+                    type="password"
+                    placeholder="Password..."
+                    value={clearPassword}
+                    onChange={(e) => {
+                      setClearPassword(e.target.value);
+                      setPasswordError(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        if (clearPassword === 'Arun@2008') {
+                          clearDeletedLogs();
+                          setShowPasswordPrompt(false);
+                          setClearPassword('');
+                          setPasswordError(false);
+                        } else {
+                          setPasswordError(true);
+                        }
+                      }
+                    }}
+                    className="w-full px-2 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 font-mono"
+                    autoFocus
+                  />
+                  {passwordError && (
+                    <div className="text-[9px] font-bold text-rose-500 leading-none">Incorrect password. Try again!</div>
+                  )}
+                  <div className="flex justify-end gap-1.5">
+                    <button
+                      onClick={() => {
+                        setShowPasswordPrompt(false);
+                        setClearPassword('');
+                        setPasswordError(false);
+                      }}
+                      className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-[9px] font-bold cursor-pointer transition-colors"
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-[9px] font-bold text-rose-700 bg-rose-100 px-1 rounded shrink-0">
-                            {log.id}
-                          </span>
-                          <span className="font-black text-slate-950 truncate block">
-                            {log.name}
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (clearPassword === 'Arun@2008') {
+                          clearDeletedLogs();
+                          setShowPasswordPrompt(false);
+                          setClearPassword('');
+                          setPasswordError(false);
+                        } else {
+                          setPasswordError(true);
+                        }
+                      }}
+                      className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[9px] font-bold cursor-pointer transition-colors"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                  {deletedLogs.length === 0 ? (
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center text-[10px] text-slate-400 font-semibold italic">
+                      No recently deleted employees
+                    </div>
+                  ) : (
+                    deletedLogs.slice(0, 5).map((log) => (
+                      <div
+                        key={log.id}
+                        className="p-2.5 bg-rose-50/50 hover:bg-rose-50 border border-rose-100 rounded-xl flex items-center justify-between text-[11px] group transition"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-[9px] font-bold text-rose-700 bg-rose-100 px-1 rounded shrink-0">
+                              {log.id}
+                            </span>
+                            <span className="font-black text-slate-950 truncate block">
+                              {log.name}
+                            </span>
+                          </div>
+                          <span className="text-[9px] text-slate-400 block mt-0.5">
+                            Removed at {log.deletedAt} ({log.type})
                           </span>
                         </div>
-                        <span className="text-[9px] text-slate-400 block mt-0.5">
-                          Removed at {log.deletedAt} ({log.type})
-                        </span>
+                        
+                        <button
+                          onClick={() => restoreEmployee(log.id)}
+                          className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-transparent hover:border-indigo-100 rounded-lg transition shrink-0 ml-1.5"
+                          title="Restore Employee to directory"
+                        >
+                          <Undo2 className="h-3.5 w-3.5" />
+                        </button>
                       </div>
-                      
-                      <button
-                        onClick={() => restoreEmployee(log.id)}
-                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 border border-transparent hover:border-indigo-100 rounded-lg transition shrink-0 ml-1.5"
-                        title="Restore Employee to directory"
-                      >
-                        <Undo2 className="h-3.5 w-3.5" />
-                      </button>
+                    ))
+                  )}
+                  {deletedLogs.length > 5 && (
+                    <div className="text-center text-[9px] text-slate-400 font-bold">
+                      + {deletedLogs.length - 5} more entries
                     </div>
-                  ))
-                )}
-                {deletedLogs.length > 5 && (
-                  <div className="text-center text-[9px] text-slate-400 font-bold">
-                    + {deletedLogs.length - 5} more entries
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
