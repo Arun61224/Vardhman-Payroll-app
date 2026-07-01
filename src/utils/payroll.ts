@@ -130,16 +130,16 @@ export function calculateDailyPayroll(
         // Labour: If they work for 7 hours, they receive full 9-hour payment (1 Day Pay)
         if (hoursWorked >= 7) {
           dailyWage = oneDayPay;
-          explanation = `Sunday Overtime: Worked ${hoursWorked.toFixed(2)}h (>= 7h), paid Full Day Wage.`;
+          explanation = `Sunday Overtime: Worked ${formatHoursAndMinutes(hoursWorked)} (>= 7h), paid Full Day Wage.`;
         } else {
           // Less than 7 hours: let's pay proportionally
           dailyWage = hoursWorked * hourlyWage;
-          explanation = `Sunday Overtime: Worked ${hoursWorked.toFixed(2)}h (< 7h), paid hourly.`;
+          explanation = `Sunday Overtime: Worked ${formatHoursAndMinutes(hoursWorked)} (< 7h), paid hourly.`;
         }
       } else {
         // Staff: Paid strictly on hourly basis for Sundays
         dailyWage = hoursWorked * hourlyWage;
-        explanation = `Sunday Overtime: Worked ${hoursWorked.toFixed(2)}h, paid strictly Hourly.`;
+        explanation = `Sunday Overtime: Worked ${formatHoursAndMinutes(hoursWorked)}, paid strictly Hourly.`;
       }
       
       // Net pay for Sunday = Extra daily wage + Overtime Bonus - Late Deduction
@@ -151,7 +151,7 @@ export function calculateDailyPayroll(
       dailyWage = oneDayPay;
       netPay = dailyWage + overtimeBonus - lateDeduction;
       
-      explanation = `Present. Worked ${hoursWorked.toFixed(2)}h.`;
+      explanation = `Present. Worked ${formatHoursAndMinutes(hoursWorked)}.`;
       if (lateMinutes > 0) {
         if (lateMinutes > gracePeriod) {
           explanation += ` Late by ${lateMinutes}m (Grace ${gracePeriod}m exceeded: -₹${lateDeduction.toFixed(2)}).`;
@@ -374,4 +374,16 @@ export function normalizeTime(timeStr: string | undefined | null, defaultFallbac
   }
   
   return defaultFallback;
+}
+
+// Convert decimal hours into a friendly readable string: "Xh Ym"
+export function formatHoursAndMinutes(hours: number): string {
+  if (isNaN(hours) || hours <= 0) return '—';
+  const totalMinutes = Math.round(hours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  if (h === 0 && m > 0) {
+    return `${m}m`;
+  }
+  return `${h}h ${String(m).padStart(2, '0')}m`;
 }
