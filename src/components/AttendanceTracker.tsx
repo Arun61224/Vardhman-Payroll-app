@@ -9,7 +9,7 @@ export const AttendanceTracker: React.FC = () => {
   const { employees, attendanceRecords, activeDate, saveAttendance, setActiveDate } = usePayroll();
   
   // Local mutable state for editing the selected date's attendance
-  const [localRecords, setLocalRecords] = useState<{ [empId: string]: Omit<AttendanceRecord, 'employeeId' | 'date'> }>({});
+  const [localRecords, setLocalRecords] = useState<{ [empId: string]: { status?: AttendanceStatus; punchIn?: string; punchOut?: string } }>({});
   const [saveSuccess, setSaveSuccess] = useState(false);
   const sunday = isSunday(activeDate);
 
@@ -244,7 +244,7 @@ export const AttendanceTracker: React.FC = () => {
 
   // Initialize local status state when activeDate or employees change
   useEffect(() => {
-    const recordsForDate: { [empId: string]: Omit<AttendanceRecord, 'employeeId' | 'date'> } = {};
+    const recordsForDate: { [empId: string]: { status?: AttendanceStatus; punchIn?: string; punchOut?: string } } = {};
 
     employees.forEach((emp) => {
       // Find existing record
@@ -264,11 +264,11 @@ export const AttendanceTracker: React.FC = () => {
           punchOut: finalStatus === 'Present' && hasOut ? normalizeTime(match.punchOut) : undefined,
         };
       } else {
-        // Default record
+        // Default record: none is selected (grey), unpaid until explicitly marked
         recordsForDate[emp.id] = {
-          status: sunday ? 'Absent' : 'Present', // Sunday off by default, weekdays present
-          punchIn: sunday ? undefined : normalizeTime(emp.standardShiftStart),
-          punchOut: sunday ? undefined : '17:00', // Default 9 hours later
+          status: undefined,
+          punchIn: undefined,
+          punchOut: undefined,
         };
       }
     });
@@ -279,7 +279,22 @@ export const AttendanceTracker: React.FC = () => {
   const handleStatusChange = (empId: string, status: AttendanceStatus) => {
     const emp = employees.find(e => e.id === empId);
     setLocalRecords((prev) => {
-      const current = prev[empId] || { status: 'Present', punchIn: undefined, punchOut: undefined };
+      const current = prev[empId] || { status: undefined, punchIn: undefined, punchOut: undefined };
+      
+      const isAlreadySelected = current.status === status;
+      
+      if (isAlreadySelected) {
+        // Toggle selection off to grey
+        return {
+          ...prev,
+          [empId]: {
+            status: undefined,
+            punchIn: undefined,
+            punchOut: undefined,
+          },
+        };
+      }
+
       let newPunchIn = current.punchIn;
       let newPunchOut = current.punchOut;
 
@@ -333,10 +348,17 @@ export const AttendanceTracker: React.FC = () => {
   const handleBulkPreset = (presetStatus: AttendanceStatus) => {
     setLocalRecords((prev) => {
       const updated = { ...prev };
-      Object.keys(updated).forEach((id) => {
-        updated[id] = {
-          ...updated[id],
+      employees.forEach((emp) => {
+        let punchIn = undefined;
+        let punchOut = undefined;
+        if (presetStatus === 'Present') {
+          punchIn = emp.standardShiftStart;
+          punchOut = '17:00';
+        }
+        updated[emp.id] = {
           status: presetStatus,
+          punchIn,
+          punchOut,
         };
       });
       return updated;
@@ -344,8 +366,16 @@ export const AttendanceTracker: React.FC = () => {
   };
 
   const handleSave = () => {
-    const formatted: AttendanceRecord[] = Object.keys(localRecords).map((empId) => {
+    const recordsToSave: AttendanceRecord[] = [];
+    const empIdsToClear: string[] = [];
+
+    Object.keys(localRecords).forEach((empId) => {
       const rec = localRecords[empId];
+      if (!rec || rec.status === undefined) {
+        empIdsToClear.push(empId);
+        return;
+      }
+
       const hasPunchIn = !!(rec.punchIn && rec.punchIn.trim() !== '' && rec.punchIn !== '-');
       const hasPunchOut = !!(rec.punchOut && rec.punchOut.trim() !== '' && rec.punchOut !== '-');
       
@@ -354,22 +384,31 @@ export const AttendanceTracker: React.FC = () => {
         finalStatus = 'Absent';
       }
 
-      return {
+      recordsToSave.push({
         employeeId: empId,
         date: activeDate,
         status: finalStatus,
         punchIn: finalStatus === 'Present' ? rec.punchIn : undefined,
         punchOut: finalStatus === 'Present' ? rec.punchOut : undefined,
-      };
+      });
     });
 
-    saveAttendance(formatted);
+    saveAttendance(recordsToSave, empIdsToClear);
 
     // Synchronize localRecords state so UI updates the buttons and details instantly
     setLocalRecords((prev) => {
       const updated = { ...prev };
       Object.keys(updated).forEach((empId) => {
         const rec = updated[empId];
+        if (!rec) return;
+        if (rec.status === undefined) {
+          updated[empId] = {
+            status: undefined,
+            punchIn: undefined,
+            punchOut: undefined,
+          };
+          return;
+        }
         const hasPunchIn = !!(rec.punchIn && rec.punchIn.trim() !== '' && rec.punchIn !== '-');
         const hasPunchOut = !!(rec.punchOut && rec.punchOut.trim() !== '' && rec.punchOut !== '-');
         if (rec.status === 'Present' && !hasPunchIn && !hasPunchOut) {
@@ -512,7 +551,7 @@ export const AttendanceTracker: React.FC = () => {
         ) : (
           <div className="divide-y divide-slate-100">
             {employees.map((emp) => {
-              const localState = localRecords[emp.id] || { status: 'Present', punchIn: emp.standardShiftStart, punchOut: '17:00' };
+              const localState = localRecords[emp.id] || { status: undefined, punchIn: undefined, punchOut: undefined };
               const hasPunchIn = !!(localState.punchIn && localState.punchIn.trim() !== '' && localState.punchIn !== '-');
               const hasPunchOut = !!(localState.punchOut && localState.punchOut.trim() !== '' && localState.punchOut !== '-');
 
@@ -662,7 +701,7 @@ export const AttendanceTracker: React.FC = () => {
                     ) : (
                       <div className="flex-1 py-2 text-center border-2 border-dashed border-slate-100 rounded-xl bg-slate-50/50 flex items-center justify-center">
                         <span className="text-xs text-slate-400 font-medium italic">
-                          {localState.status === 'Absent' ? 'No hours computed (Absent)' : 'Excused monthly allowance (Leave)'}
+                          {effectiveStatus === 'Absent' ? 'No hours computed (Absent)' : effectiveStatus === 'Leave' ? 'Excused monthly allowance (Leave)' : 'Attendance not marked yet'}
                         </span>
                       </div>
                     )}
