@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { usePayroll } from '../context/PayrollContext';
-import { calculateMonthlySummary, formatReadableDate } from '../utils/payroll';
+import { calculateMonthlySummary, formatReadableDate, formatHoursAndMinutes } from '../utils/payroll';
 import { MonthlyPayrollSummary, Employee, DayPayrollDetails } from '../types';
 import { Search, Filter, IndianRupee, FileText, Calendar, Download, Printer, X, Clock, HelpCircle, Star, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -49,6 +49,66 @@ export const PayrollGenerator: React.FC = () => {
     window.print();
   };
 
+  const exportToExcel = () => {
+    const headers = [
+      "Employee ID",
+      "Employee Name",
+      "Employee Type",
+      "Basic Salary (INR)",
+      "Days Present",
+      "Days Leave",
+      "Days Absent",
+      "Total Late Minutes",
+      "Late Deductions (INR)",
+      "Leave/Absent Deductions (INR)",
+      "Overtime Bonuses (INR)",
+      "Final Payable Salary (INR)",
+      "ESI Deduction (INR)",
+      "PF Deduction (INR)",
+      "LWF Deduction (INR)",
+      "Net Take Home (INR)"
+    ];
+
+    const rows = payrollSummaries.map(s => [
+      s.employeeId,
+      s.employeeName,
+      s.employeeType,
+      s.basicSalary,
+      s.daysPresent,
+      s.daysLeave,
+      s.daysAbsent,
+      s.totalLateMinutes,
+      Math.round(s.totalLateDeductions),
+      Math.round(s.leaveDeductions),
+      s.totalOvertimeBonuses,
+      Math.round(s.finalPayableSalary),
+      Math.round(s.esiDeduction),
+      Math.round(s.pfDeduction),
+      Math.round(s.lwfDeduction),
+      Math.round(s.netTakeHome)
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(field => {
+        const str = String(field ?? "");
+        if (str.includes(",") || str.includes("\"") || str.includes("\n")) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      }).join(","))
+    ].join("\n");
+
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Payroll_Report_${MONTH_NAMES[activeMonth]}_${activeYear}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
       {/* Title & Period Selector */}
@@ -58,30 +118,42 @@ export const PayrollGenerator: React.FC = () => {
           <p className="text-sm text-slate-500">Calculate gross wages, late deductions, leave ceilings, and print corporate statements.</p>
         </div>
 
-        {/* Month / Year Selectors */}
-        <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-xs">
-          <Calendar className="h-4 w-4 text-slate-400 ml-2" />
-          <select
-            value={activeMonth}
-            onChange={(e) => setActiveMonth(Number(e.target.value))}
-            className="text-xs font-semibold text-slate-700 focus:outline-none bg-transparent cursor-pointer py-1"
-          >
-            {MONTH_NAMES.map((name, idx) => (
-              <option key={idx} value={idx}>{name}</option>
-            ))}
-          </select>
+        <div className="flex items-center gap-2 self-stretch md:self-auto justify-end">
+          {/* Month / Year Selectors */}
+          <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-slate-100 shadow-xs">
+            <Calendar className="h-4 w-4 text-slate-400 ml-2" />
+            <select
+              value={activeMonth}
+              onChange={(e) => setActiveMonth(Number(e.target.value))}
+              className="text-xs font-semibold text-slate-700 focus:outline-none bg-transparent cursor-pointer py-1"
+            >
+              {MONTH_NAMES.map((name, idx) => (
+                <option key={idx} value={idx}>{name}</option>
+              ))}
+            </select>
 
-          <span className="text-slate-300">|</span>
+            <span className="text-slate-300">|</span>
 
-          <select
-            value={activeYear}
-            onChange={(e) => setActiveYear(Number(e.target.value))}
-            className="text-xs font-semibold text-slate-700 focus:outline-none bg-transparent cursor-pointer py-1 pr-2"
+            <select
+              value={activeYear}
+              onChange={(e) => setActiveYear(Number(e.target.value))}
+              className="text-xs font-semibold text-slate-700 focus:outline-none bg-transparent cursor-pointer py-1 pr-2"
+            >
+              {[2025, 2026, 2027].map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Export to Excel Button */}
+          <button
+            onClick={exportToExcel}
+            className="px-4 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-all rounded-xl flex items-center gap-1.5 shadow-xs border border-emerald-500 cursor-pointer"
+            title="Download payroll report in Excel format"
           >
-            {[2025, 2026, 2027].map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+            <Download className="h-3.5 w-3.5" />
+            Export to Excel
+          </button>
         </div>
       </div>
 
@@ -496,7 +568,7 @@ export const PayrollGenerator: React.FC = () => {
                               {day.punchIn ? `${day.punchIn} - ${day.punchOut}` : '—'}
                             </td>
                             <td className="py-2.5 px-4 text-slate-700 font-medium">
-                              {day.hoursWorked > 0 ? `${day.hoursWorked.toFixed(1)}h` : '—'}
+                              {day.hoursWorked > 0 ? formatHoursAndMinutes(day.hoursWorked) : '—'}
                             </td>
                             <td className="py-2.5 px-4 text-rose-600 font-mono font-medium">
                               {day.lateMinutes > 0 ? `${day.lateMinutes}m` : '0m'}
