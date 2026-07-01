@@ -46,6 +46,19 @@ export function calculateHoursWorked(punchIn: string, punchOut: string): number 
   return (outMins - inMins) / 60;
 }
 
+// Calculate lunch overlap in hours (between 13:00 and 14:00)
+export function calculateLunchOverlap(punchIn: string, punchOut: string): number {
+  const inMins = timeToMinutes(punchIn);
+  const outMins = timeToMinutes(punchOut);
+  if (outMins <= inMins) return 0;
+  
+  const lunchStart = 780; // 13:00 (1 PM)
+  const lunchEnd = 840;   // 14:00 (2 PM)
+  
+  const overlap = Math.max(0, Math.min(outMins, lunchEnd) - Math.max(inMins, lunchStart));
+  return overlap / 60;
+}
+
 // Calculate payroll details for a single day
 export function calculateDailyPayroll(
   employee: Employee,
@@ -59,6 +72,8 @@ export function calculateDailyPayroll(
   const hourlyWage = oneDayPay / 9;
 
   let hoursWorked = 0;
+  let actualWorkingHours = 0;
+  let underworkDeduction = 0;
   let dailyWage = 0;
   let lateMinutes = 0;
   let lateDeduction = 0;
@@ -75,9 +90,11 @@ export function calculateDailyPayroll(
       isSunday: sunday,
       status,
       hoursWorked: 0,
+      actualWorkingHours: 0,
       dailyWage: 0,
       lateMinutes: 0,
       lateDeduction: 0,
+      underworkDeduction: 0,
       overtimeBonus: 0,
       netPay: 0,
       explanation,
@@ -91,9 +108,11 @@ export function calculateDailyPayroll(
       isSunday: sunday,
       status,
       hoursWorked: 0,
+      actualWorkingHours: 0,
       dailyWage: 0,
       lateMinutes: 0,
       lateDeduction: 0,
+      underworkDeduction: 0,
       overtimeBonus: 0,
       netPay: 0,
       explanation,
@@ -103,6 +122,13 @@ export function calculateDailyPayroll(
   // Employee is Present
   if (punchIn && punchIn !== '-' && punchOut && punchOut !== '-') {
     hoursWorked = calculateHoursWorked(punchIn, punchOut);
+    actualWorkingHours = hoursWorked;
+    
+    let lunchOverlap = 0;
+    if (type === 'Staff') {
+      lunchOverlap = calculateLunchOverlap(punchIn, punchOut);
+      actualWorkingHours = Math.max(0, hoursWorked - lunchOverlap);
+    }
     
     // 1. Overtime Calculation:
     // If total working hours >= 12 (i.e. standard 9 hours + 3 hours OT), add ₹100 flat bonus
@@ -124,6 +150,17 @@ export function calculateDailyPayroll(
       }
     }
 
+    // Underwork deduction for Staff on Weekdays
+    if (type === 'Staff' && !sunday) {
+      if (actualWorkingHours >= 8) {
+        underworkDeduction = 0;
+      } else if (actualWorkingHours >= 4) {
+        underworkDeduction = 0.5 * oneDayPay;
+      } else {
+        underworkDeduction = 1.0 * oneDayPay;
+      }
+    }
+
     // 3. Sunday Pay Calculation:
     if (sunday) {
       if (type === 'Labour') {
@@ -137,9 +174,9 @@ export function calculateDailyPayroll(
           explanation = `Sunday Overtime: Worked ${formatHoursAndMinutes(hoursWorked)} (< 7h), paid hourly.`;
         }
       } else {
-        // Staff: Paid strictly on hourly basis for Sundays
-        dailyWage = hoursWorked * hourlyWage;
-        explanation = `Sunday Overtime: Worked ${formatHoursAndMinutes(hoursWorked)}, paid strictly Hourly.`;
+        // Staff: Paid strictly on hourly basis for Sundays based on actualWorkingHours (excluding lunch)
+        dailyWage = actualWorkingHours * hourlyWage;
+        explanation = `Sunday Overtime: Worked ${formatHoursAndMinutes(actualWorkingHours)} (Excl. ${formatHoursAndMinutes(lunchOverlap)} lunch), paid strictly Hourly.`;
       }
       
       // Net pay for Sunday = Extra daily wage + Overtime Bonus - Late Deduction
@@ -147,11 +184,23 @@ export function calculateDailyPayroll(
     } else {
       // Weekday / Regular Working Day
       // Basic salary already covers standard weekdays.
-      // So the weekday daily earnings component is covered, but we track late deductions and overtime bonuses.
+      // So the weekday daily earnings component is covered, but we track late deductions, underwork penalties, and overtime bonuses.
       dailyWage = oneDayPay;
-      netPay = dailyWage + overtimeBonus - lateDeduction;
+      netPay = dailyWage + overtimeBonus - lateDeduction - underworkDeduction;
       
-      explanation = `Present. Worked ${formatHoursAndMinutes(hoursWorked)}.`;
+      if (type === 'Staff') {
+        explanation = `Present. Worked ${formatHoursAndMinutes(actualWorkingHours)} (Excl. ${formatHoursAndMinutes(lunchOverlap)} lunch).`;
+        if (underworkDeduction > 0) {
+          if (underworkDeduction === 0.5 * oneDayPay) {
+            explanation += ` Half-day penalty applied (-₹${underworkDeduction.toFixed(0)}).`;
+          } else {
+            explanation += ` Short-day penalty applied (-₹${underworkDeduction.toFixed(0)}).`;
+          }
+        }
+      } else {
+        explanation = `Present. Worked ${formatHoursAndMinutes(hoursWorked)}.`;
+      }
+      
       if (lateMinutes > 0) {
         if (lateMinutes > gracePeriod) {
           explanation += ` Late by ${lateMinutes}m (Grace ${gracePeriod}m exceeded: -₹${lateDeduction.toFixed(2)}).`;
@@ -174,9 +223,11 @@ export function calculateDailyPayroll(
     punchIn,
     punchOut,
     hoursWorked,
+    actualWorkingHours,
     dailyWage,
     lateMinutes,
     lateDeduction,
+    underworkDeduction,
     overtimeBonus,
     netPay,
     explanation,
@@ -205,6 +256,7 @@ export function calculateMonthlySummary(
   let totalHoursWorked = 0;
   let totalLateMinutes = 0;
   let totalLateDeductions = 0;
+  let totalUnderworkDeductions = 0;
   let totalOvertimeBonuses = 0;
   let totalSundayPay = 0;
 
@@ -227,6 +279,7 @@ export function calculateMonthlySummary(
           totalHoursWorked += details.hoursWorked;
           totalLateMinutes += details.lateMinutes;
           totalLateDeductions += details.lateDeduction;
+          totalUnderworkDeductions += details.underworkDeduction || 0;
           totalOvertimeBonuses += details.overtimeBonus;
           if (sunday) {
             totalSundayPay += details.dailyWage; // Sunday wage is extra
@@ -291,10 +344,10 @@ export function calculateMonthlySummary(
   const absentDeductions = daysAbsent * oneDayPay;
 
   // Final Payable Salary Formula:
-  // Final = Basic Salary - Leave Deductions (leaves > 1.5) - Absent Deductions - Late Deductions + Overtime Bonuses + Sunday Overtime Pay
+  // Final = Basic Salary - Leave Deductions (leaves > 1.5) - Absent Deductions - Late Deductions - Underwork Deductions + Overtime Bonuses + Sunday Overtime Pay
   const finalPayableSalary = Math.max(
     0,
-    basicSalary - leaveDeductions - absentDeductions - totalLateDeductions + totalOvertimeBonuses + totalSundayPay
+    basicSalary - leaveDeductions - absentDeductions - totalLateDeductions - totalUnderworkDeductions + totalOvertimeBonuses + totalSundayPay
   );
 
   const esiDeduction = employee.esiDeducted ? Number((finalPayableSalary * 0.0075).toFixed(2)) : 0;
@@ -317,6 +370,7 @@ export function calculateMonthlySummary(
     totalHoursWorked,
     totalLateMinutes,
     totalLateDeductions,
+    totalUnderworkDeductions,
     totalOvertimeBonuses,
     
     leaveDeductions: leaveDeductions + absentDeductions, // Let's combine both leaves > 1.5 and absent deductions for display
