@@ -1,0 +1,6 @@
+{
+  "name": "Payroll Management",
+  "description": "A comprehensive payroll and attendance management application that calculates employee salaries based on complex attendance, grace periods, overtime, and Sunday policies.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
